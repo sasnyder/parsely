@@ -1,0 +1,312 @@
+<?php
+	//Include if Parsely API key is defined and the page psot type is Article, Post, or Native Ad
+	if (!NAPCO::option('parsely_api_key') or !in_array(get_post_type(), array('article', 'post', 'nativead'))) {
+		return;
+	}
+?>
+
+<style>
+	#recommendation {
+		width:400px;
+		min-height:150px;
+		z-index:2000;
+		float:right;
+		position:fixed;
+		right:-400px;
+		top:400px;
+		background:#fff;
+		padding:10px;
+		border:1px solid #eee;
+		transition:transform 500ms cubic-bezier(0.47, 0, 0.75, 0.72);
+		-moz-box-shadow:1px 1px 1px 1px #ccc;
+		-webkit-box-shadow:1px 1px 1px 1px #ccc;
+		-khtml-box-shadow:1px 1px 1px 1px #ccc;
+		box-shadow:1px 1px 1px 1px #ccc;
+	}
+	#recommendation.open { transform:translateX(-430px); }
+	#recommendation .header {
+		text-transform:uppercase;
+		color:#b1b1b1;
+		display:inline-block;
+		margin-bottom:10px;
+		font-size:14px;
+	}
+	#recommendation a {
+		float:left;
+		text-decoration:none;
+		color:#000;
+		font-weight:bold;
+		font-size:20px;
+		line-height:22px;
+	}
+	#recommendation img {
+		float:left;
+		clear:left;
+		margin-right:10px;
+	}
+	#recommendation .close {
+		float:right;
+		border:1px solid #c5c5c5;
+		height:13px;
+		width:13px;
+		cursor:pointer;
+		position:relative;
+		box-sizing:content-box;
+		transition:background 0.5s;
+		display:block; /* override sticky.css */
+	}
+	#recommendation .close span::before,
+	#recommendation .close span::after {
+		display:block;
+		background:#737373;
+		height:1px;
+		position:absolute;
+		top:6px;
+		left:2px;
+		width:9px;
+		content:"";
+		transition:height 0.5s, background 0.5s;
+	}
+	#recommendation .close span::before { transform:rotate(45deg); }
+	#recommendation .close span::after { transform:rotate(-45deg); }
+	#recommendation .close:hover { background:#d3d3d3; }
+	#recommendation .close:hover span::before,
+	#recommendation .close:hover span::after { height:2px; background:#fff; }
+
+</style>
+
+<aside id="recommendation">
+	<div class="close"><span></span></div>
+	<span class="header">Recommended for you</span>
+	<article><a><img></a></article>
+</aside>
+
+<script type="text/javascript">
+	//NAPCO Parsely Profile Training and Recommendations Obj
+	var nParsely = {
+		//API URL Root, NAPSSO cookie, URL w/o query params
+		api: 'https://api.parsely.com/v2/',
+		uuid: (document.cookie.match('(^|; )napsso=([^;]*)') || 0)[2],
+		url: window.location.protocol + '//' + window.location.hostname + window.location.pathname,
+
+		//Profile training
+		profile: {
+			//Profile trained flag
+			trained: false,
+
+			//JSON-P Profile training request
+			train: function() {
+				//Create request tag
+				var req = document.createElement('script');
+
+				//Only train profile once
+				if (this.trained) {
+					return;
+				} else {
+					this.trained = true;
+				}
+
+				//Build request parameters
+				req.src = nParsely.api+'profile?'+
+					'callback=nParsely.profile.response'+
+					'&apikey=piworld.com'+
+					'&uuid='+this.uuid+
+					'&url='+encodeURIComponent(nParsely.url);
+
+				document.getElementsByTagName('head')[0].appendChild(req);
+			},
+
+			//Response handler
+			response: function(res) {
+				if (!res.success) {
+					console.log('Parsely API Profile Response:');
+					console.log(res);
+				}
+			}
+		},
+
+		//Related Recommendations
+		recommendation: {
+			//Recommedation exists flag, viewed flag, closed flag, requested flag, HTML Container
+			exists: false,
+			viewed: false,
+			closed: false,
+			requested: false,
+			container: document.getElementById('recommendation'),
+			trigger: document.querySelectorAll('.post-body .body-main div[itemprop=content]')[0],
+
+			//JSON-P Recommendation request
+			request: function() {
+				//Build meta exclusion parameters
+				function exclude(meta, value) {
+					//Split commas separated string into array, remove empties, reduce array into URL query parameter
+					return value.split(',').filter(Boolean).reduce(function(query, value) {
+						return query+'&exclude='+meta+':"'+value+'"';
+					}, '');
+				};
+
+				//Build click strategy request parameters
+				function strategy() {
+					//Look for host in document referrer. HTTPS -> HTTP referrer security issue limits the usefulness
+					function referrer(host){
+						return -1 !== document.referrer.indexOf(host);
+					};
+
+					//Identified referrers
+					var search = ['google','bing','yahoo','duckduckgo'],
+						social = ['linkedin','twitter','facebook','instagram'];
+
+					//Set Parsely click strategy if document referrer matches one of the identified referrers
+					if (search.find(referrer)) { return '&strategy=click&click=ref_search'; }
+					if (social.find(referrer)) { return '&strategy=click&click=ref_social'; }
+
+					//API default but set explicity for clarity
+					return '&strategy=recency';
+				};
+
+				//Create request tag
+				var req = document.createElement('script');
+
+				//Only request recommendation if the trigger element exists
+				if (!this.trigger) {
+					return;
+				}
+
+				//Only request recommendation once
+				if (this.requested) {
+					return;
+				} else {
+					this.requested = true;
+				}
+
+				//Build request parameters
+				req.src = nParsely.api+'related?'+
+					'callback=nParsely.recommendation.response'+
+					'&apikey=piworld.com'+
+					'&uuid='+nParsely.uuid+
+					'&url='+encodeURIComponent(nParsely.url)+
+					'&limit=2&days=180'+
+					strategy()+
+					exclude('tags', 'posttype:Industrycenter,posttype:Post,posttype:Book,posttype:Issue,posttype:Item,posttype:Nativead,posttype:Aggregatedcontent,posttype:Sitenewsletter')+
+					exclude('authors', 'Staff Writer')+
+					exclude('sections', '');
+				document.getElementsByTagName('head')[0].appendChild(req);
+			},
+
+			//Response handler
+			response: function(res) {
+				//Recommendation container elements
+				var img = this.container.querySelector('img'),
+					link = this.container.querySelector('a'),
+					result;
+
+				//Logic to prevent recommending the current URL
+				if (res.success) {
+					if (res.data[0] && res.data[0].url != nParsely.url) {
+						result = res.data[0];
+					} else if (res.data[1] && res.data[1].url != nParsely.url) {
+						result = res.data[1];
+					}
+				}
+
+				//Build recommendation HTML
+				if (result) {
+					this.exists = true;
+					//Hide image if no thumbnail URL
+					if (!(img.src = result.thumb_url_medium)) { img.className = 'hide'; }
+					link.href = result.url;
+					link.innerHTML += result.title;
+					this.toggle();
+				} else {
+					console.log('Parsely API Recommendation Response:');
+					console.log(res);
+				}
+			},
+
+			//Toggle recommendation display
+			toggle: function() {
+				//Determine if scrolled past threshold, 75% height of post body
+				function threshold() {
+					var rect = nParsely.recommendation.trigger.getBoundingClientRect(),
+						offset = rect.bottom - rect.height;
+					return rect.height * 0.75 + offset <= window.innerHeight;
+				};
+
+				//If recommendation exists, not closed, and past trigger point
+				if (this.exists && !this.closed && threshold()) {
+					this.container.className = 'open';
+					//Track the open event if GA defined and recommendation hasnt been viewed yet
+					if (typeof _gaq !== 'undefined' && !this.viewed) {
+						_gaq.push(['_trackEvent', 'article', 'Recommendation Flyout Viewed', nParsely.url]);
+						this.viewed = true;
+					}
+				} else {
+					this.container.className = '';
+				}
+			}
+		}
+	};
+
+	//DOM Content loaded - if NAPSSO cookie exists, train profile and get recommendation
+	//This event listener could be excluded and rely solely on the webuser_loaded event listener, but this works even when w.napco is down
+	document.addEventListener('DOMContentLoaded', function() {
+		if (nParsely.uuid) {
+			nParsely.profile.train();
+			nParsely.recommendation.request();
+		}
+	});
+
+	//NAPCO webuser had loaded - if webuser UUID exists, train profile and get recommendation
+	//This event listener could be excluded and rely solely on the DOM Content Loaded event listener, but this for first time visitors
+	document.addEventListener('webuser_loaded', function() {
+		if (nParsely.uuid = webuser.uuid) {
+			nParsely.profile.train();
+			nParsely.recommendation.request();
+		}
+	});
+
+	//Toggle recommendation display on scroll
+	document.addEventListener('scroll', function() {
+		nParsely.recommendation.toggle();
+	});
+
+	//Recommendation close button clicked - set closed flag and toggle recommendation, ie close it
+	nParsely.recommendation.container.querySelector('.close').addEventListener('click', function() {
+		nParsely.recommendation.closed = true;
+		nParsely.recommendation.toggle();
+		//Track the close event if GA defined
+		if (typeof _gaq !== 'undefined') {
+			_gaq.push(['_trackEvent', 'article', 'Recommendation Flyout Closed', nParsely.url]);
+		}
+	});
+
+	//Track the click event if GA defined
+	nParsely.recommendation.container.querySelector('article a').addEventListener('click', function() {
+		if (typeof _gaq !== 'undefined') {
+			_gaq.push(['_trackEvent', 'article', 'Recommendation Flyout Clicked', 'Digital Printing - Production Inkjet']);
+		}
+	});
+
+	//Polyfill find
+	if (!Array.prototype.find) {
+		Array.prototype.find = function(predicate) {
+			if (this === null) {
+				throw new TypeError('Array.prototype.find called on null or undefined');
+			}
+			if (typeof predicate !== 'function') {
+				throw new TypeError('predicate must be a function');
+			}
+			var list = Object(this);
+			var length = list.length >>> 0;
+			var thisArg = arguments[1];
+			var value;
+			for (var i = 0; i < length; i++) {
+				value = list[i];
+				if (predicate.call(thisArg, value, i, list)) {
+					return value;
+				}
+			}
+			return undefined;
+		};
+	}
+</script>
